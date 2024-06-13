@@ -2,6 +2,8 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import javax.swing.*;
 
 public class FlappyBird extends JPanel implements ActionListener, KeyListener {
@@ -19,6 +21,7 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
     int birdY = boardWidth/2;
     int birdWidth = 34;
     int birdHeight = 24;
+
 
     class Bird {
         int x = birdX;
@@ -61,40 +64,9 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
     Random random = new Random();
 
     Timer gameLoop;
-    Timer placePipeTimer;
     boolean gameOver = false;
     double score = 0;
-
-    FlappyBird() {
-        setPreferredSize(new Dimension(boardWidth, boardHeight));
-        // setBackground(Color.blue);
-        setFocusable(true);
-        addKeyListener(this);
-
-        //load images
-        backgroundImg = new ImageIcon(getClass().getResource("./flappybirdbg.png")).getImage();
-        birdImg = new ImageIcon(getClass().getResource("./flappybird.png")).getImage();
-        topPipeImg = new ImageIcon(getClass().getResource("./toppipe.png")).getImage();
-        bottomPipeImg = new ImageIcon(getClass().getResource("./bottompipe.png")).getImage();
-
-        //bird
-        bird = new Bird(birdImg);
-        pipes = new ArrayList<Pipe>();
-
-        //place pipes timer
-        placePipeTimer = new Timer(1500, new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                // Code to be executed
-                placePipes();
-            }
-        });
-        placePipeTimer.start();
-
-        //game timer
-        gameLoop = new Timer(1000/60, this); //how long it takes to start timer, milliseconds gone between frames
-        gameLoop.start();
-    }
+    int difficulty = 0;
 
     void placePipes() {
         //(0-1) * pipeHeight/2.
@@ -111,6 +83,7 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
         bottomPipe.y = topPipe.y  + pipeHeight + openingSpace;
         pipes.add(bottomPipe);
     }
+
 
 
     public void paintComponent(Graphics g) {
@@ -131,12 +104,14 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
             g.drawImage(pipe.img, pipe.x, pipe.y, pipe.width, pipe.height, null);
         }
 
+
         //score
         g.setColor(Color.white);
 
         g.setFont(new Font("Arial", Font.PLAIN, 32));
         if (gameOver) {
             g.drawString("Game Over: " + String.valueOf((int) score), 10, 35);
+
         }
         else {
             g.drawString(String.valueOf((int) score), 10, 35);
@@ -144,21 +119,46 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
 
     }
 
+    Timer PipeMoveTimer;
+    int increment = 0;
+
     public void move() {
         //bird
         velocityY += gravity;
         bird.y += velocityY;
         bird.y = Math.max(bird.y, 0); //apply gravity to current bird.y, limit the bird.y to top of the canvas
 
-            //pipes
+        //pipes
         for (int i = 0; i < pipes.size(); i++) {
             Pipe pipe = pipes.get(i);
-            pipe.x += velocityX;
+            pipe.x += velocityX - difficulty*2;
+            Pipe rightmostPipe = pipes.get(pipes.size() - 1);
+
+
+            if(difficulty >= 2){
+                if(increment % 2 == 0){
+                    pipe.y += 2;
+                }
+                else{
+                    pipe.y -= 2;
+                }
+            }
 
             if (!pipe.passed && bird.x > pipe.x + pipe.width) {
                 score += 0.5; //0.5 because there are 2 pipes! so 0.5*2 = 1, 1 for each set of pipes
                 pipe.passed = true;
+                difficulty = (int) (score/10);
+
             }
+
+            // places pipes when the previous pipes pass through the middle of the screen
+            if (pipes.size() > 0) {
+
+                if (rightmostPipe.x + rightmostPipe.width < boardWidth / 2) {
+                    placePipes();
+                }
+            }
+
 
             if (collision(bird, pipe)) {
                 gameOver = true;
@@ -169,6 +169,44 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
             gameOver = true;
         }
     }
+
+
+
+    FlappyBird() {
+        setPreferredSize(new Dimension(boardWidth, boardHeight));
+        // setBackground(Color.blue);
+        setFocusable(true);
+        addKeyListener(this);
+
+        //load images
+        backgroundImg = new ImageIcon(getClass().getResource("./flappybirdbg.png")).getImage();
+        birdImg = new ImageIcon(getClass().getResource("./flappybird.png")).getImage();
+        topPipeImg = new ImageIcon(getClass().getResource("./bottompipe.png")).getImage();
+        bottomPipeImg = new ImageIcon(getClass().getResource("./toppipe.png")).getImage();
+
+        //bird
+        bird = new Bird(birdImg);
+        pipes = new ArrayList<Pipe>();
+
+        CompletableFuture.delayedExecutor(2, TimeUnit.SECONDS).execute(() -> {
+            placePipes();
+        });
+
+        //game timer
+        gameLoop = new Timer(1000/60, this); //how long it takes to start timer, milliseconds gone between frames
+        gameLoop.start();
+
+        PipeMoveTimer = new Timer(500, new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                increment += 1;
+            }
+        });
+
+        PipeMoveTimer.start();
+
+    }
+
 
     boolean collision(Bird a, Pipe b) {
         return a.x < b.x + b.width &&   //a's top left corner doesn't reach b's top right corner
@@ -182,7 +220,7 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
         move();
         repaint();
         if (gameOver) {
-            placePipeTimer.stop();
+
             gameLoop.stop();
         }
     }
@@ -201,7 +239,9 @@ public class FlappyBird extends JPanel implements ActionListener, KeyListener {
                 gameOver = false;
                 score = 0;
                 gameLoop.start();
-                placePipeTimer.start();
+                CompletableFuture.delayedExecutor(2, TimeUnit.SECONDS).execute(() -> {
+                    placePipes();
+                });
             }
         }
     }
